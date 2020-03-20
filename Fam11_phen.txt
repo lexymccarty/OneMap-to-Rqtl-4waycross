@@ -1,7 +1,6 @@
 daydead	surv	DAY
 NA	NA	NA
 NA	NA	NA
-NA	NA	NA
 9	1	9
 11	1	11
 11	1	11
