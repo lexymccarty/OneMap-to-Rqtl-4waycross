@@ -5,4 +5,3 @@ This repository includes the R script (.rmd) file, the three necessary input fil
 of the script with detailed instructions & example output, and an example of the .csv output file.
 
 Please reach out with any questions, comments, or suggestions (amccarty@umces.edu).
-Good luck! 
