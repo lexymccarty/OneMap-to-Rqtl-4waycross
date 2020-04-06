@@ -1,0 +1,157 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+             Script to convert from Onemap (map file and marker genotype file) to R/qtl .csv file                                             format analysis of QTL from a 4-way cross. 
+
+
+Before you can run this script, you need to upload your files in the correct format. 
+A) You need a map file from Onemap. 
+After determining the appropriate LOD score and ordering markers within each linkage group, you will create a map file including all linkage groups and marker order: 
+ex. map11 <- list(lg1, lg2, lg3, lg4) 
+You can now export the map file, including the parental linkage phase information, using: 
+parents_haplotypes(list(lg1_final, lg2_final, lg3), out_file = "Fam11_haplotypes_final.txt", group_names=c("chr1", "chr2","chr3"))
+Read this file into R
+```{r}
+map <- read.table("Fam11_haplotypes_final.txt", header=TRUE)
+names(map) <- c("Chr", "MarkerNumb", "MarkerNames","Position","Parent1_1","Parent1_2","Parent2_1","Parent2_2")
+head(map)
+```
+
+Wrangle the data so you have Chr, Marker, Position, Parent1, Parent2
+```{r}
+map$MarkerNumb = NULL                # Remove this column
+colnames(map)[2] <- "Marker"         # Rename Marker column
+map$Chr <- substr(map$Chr, 4,7)      # Remove 'chr' from Chr column so values are just numbers
+
+# Combine parental genotypes into two columns, one for Parent 1 and one for Parent 2
+library(tidyr)
+map <- transform(map, Parent1=paste(Parent1_1, Parent1_2, sep=""))
+map <- transform(map, Parent2=paste(Parent2_1, Parent2_2, sep=""))
+map[,4:7] = NULL
+head(map)
+```
+
+B) The genotype file: includes the parental cross type for each marker and the genotype of the marker for every individual.
+This file was written out (i.e. write_onemap_raw(Fam11_bins, file.name = "Fam11.raw", cross="outcross")) after the vcf file was loaded into Onemap and redundant markers were removed by grouping markers into bins (see Outcrossing Populations Onemap tutorial on cran)
+* Need to change file format to .txt in order to read in. 
+```{r}
+geno <- read.table("Fam11.txt", header=T)
+geno[1:5,1:7]
+```
+
+Onemap inserts a '*' next to every marker in the genotype file, remove this.
+```{r}
+geno$Marker = as.character(factor(gsub("\\*", "", geno$Marker)))
+```
+
+Join the map and genotype file together based on markers present in the map file.
+```{r}
+library(dplyr)
+comb <- merge(map, geno, by='Marker')
+comb[1:5,1:8]
+```
+
+Now, you can edit the script below to change your marker genotype information into correct codings for Rqtl. 
+(See read.cross() to determine correct codes.)
+
+This script uses the case_when() function in tidyverse. 
+Ex. If the cross is 'B3.7' and the parents are 'ab' and 'ab' at that marker, and the sample marker genotype is 'a', change to 1. 
+```{r}
+library(tidyverse)
+
+comb2 <- comb %>% mutate_at(
+  vars(starts_with('Fam11_')), # all the columns you want to change start in a similar manner, in my case 'Fam11_'
+  funs(case_when(
+       Cross == 'B3.7' & Parent1 == 'ab' & Parent2 == 'ab' & . == 'a' ~ 1,        #B3.7abab
+       Cross == 'B3.7' & Parent1 == 'ab' & Parent2 == 'ab' & . == 'ab' | . == 'ba' ~ 10, 
+       Cross == 'B3.7' & Parent1 == 'ab' & Parent2 == 'ab' & . == 'b' ~ 4,
+       Cross == 'B3.7' & Parent1 == 'ab' & Parent2 == 'ba' & . == 'a' ~ 3,        #B3.7abba
+       Cross == 'B3.7' & Parent1 == 'ab' & Parent2 == 'ba' & . == 'ab' | . == 'ba' ~ 9, 
+       Cross == 'B3.7' & Parent1 == 'ab' & Parent2 == 'ba' & . == 'b' ~ 6,
+       Cross == 'B3.7' & Parent1 == 'ba' & Parent2 == 'ab' & . == 'a' ~ 6,        #B3.7baab
+       Cross == 'B3.7' & Parent1 == 'ba' & Parent2 == 'ab' & . == 'ab' | . == 'ba' ~ 9, 
+       Cross == 'B3.7' & Parent1 == 'ba' & Parent2 == 'ab' & . == 'b' ~ 3,
+       Cross == 'B3.7' & Parent1 == 'ba' & Parent2 == 'ba' & . == 'a' ~ 3,        #B3.7baba
+       Cross == 'B3.7' & Parent1 == 'ba' & Parent2 == 'ba' & . == 'ab' | . == 'ba' ~ 9, 
+       Cross == 'B3.7' & Parent1 == 'ba' & Parent2 == 'ba' & . == 'b' ~ 6,
+       Cross == 'D1.10' & Parent1 == 'ab' & Parent2 == 'aa' & . == 'a' ~ 5,        #D1.10abaa
+       Cross == 'D1.10' & Parent1 == 'ab' & Parent2 == 'aa' & . == 'ab' | . == 'ba' ~ 6,
+       Cross == 'D1.10' & Parent1 == 'ba' & Parent2 == 'aa' & . == 'a' ~ 6,        #D1.10baaa
+       Cross == 'D1.10' & Parent1 == 'ba' & Parent2 == 'aa' & . == 'ab' | . == 'ba' ~ 5,
+       Cross == 'D1.10' & Parent1 == 'aa' & Parent2 == 'ab' & . == 'a' ~ 7,        #D1.10aaab
+       Cross == 'D1.10' & Parent1 == 'aa' & Parent2 == 'ab' & . == 'ab' | . == 'ba' ~ 8, 
+       Cross == 'D1.10' & Parent1 == 'aa' & Parent2 == 'ba' & . == 'a' ~ 8,        #D1.10aaab
+       Cross == 'D1.10' & Parent1 == 'aa' & Parent2 == 'ba' & . == 'ab' | . == 'ba' ~ 7,
+       Cross == 'D2.15' & Parent1 == 'aa' & Parent2 == 'ab' & . == 'a' ~ 7,        #D2.15aaab
+       Cross == 'D2.15' & Parent1 == 'aa' & Parent2 == 'ab' & . == 'ab' | . == 'ba' ~ 8,
+       Cross == 'D2.15' & Parent1 == 'aa' & Parent2 == 'ba' & . == 'a' ~ 8,        #D2.15aaba
+       Cross == 'D2.15' & Parent1 == 'aa' & Parent2 == 'ba' & . == 'ab' | . == 'ba' ~ 7,
+       Cross == 'D2.15' & Parent1 == 'ab' & Parent2 == 'aa' & . == 'a' ~ 5,        #D2.15abaa
+       Cross == 'D2.15' & Parent1 == 'ab' & Parent2 == 'aa' & . == 'ab' | . == 'ba' ~ 6,
+       Cross == 'D2.15' & Parent1 == 'ba' & Parent2 == 'aa' & . == 'a' ~ 6,        #D2.15baaa
+       Cross == 'D2.15' & Parent1 == 'ba' & Parent2 == 'aa' & . == 'ab' | . == 'ba' ~ 5)))
+# - = missing data => coded as NA
+comb2[1:5,1:7]
+```
+
+Need to order each linkage group by position.
+Use tidyverse filter() to separate each linkage group into its own data frame and then order the markers in ascending order, starting at 0 cM.
+```{r}
+chr1 <- comb2 %>% filter(Chr == 1) %>% arrange(Position)
+chr2 <- comb2 %>% filter(Chr == 2) %>% arrange(Position)
+chr3 <- comb2 %>% filter(Chr == 3) %>% arrange(Position)
+chr4 <- comb2 %>% filter(Chr == 4) %>% arrange(Position)
+chr5A <- comb2 %>% filter(Chr == '5A') %>% arrange(Position)
+chr5B <- comb2 %>% filter(Chr == '5B') %>% arrange(Position)
+chr6 <- comb2 %>% filter(Chr == 6) %>% arrange(Position)
+chr7 <- comb2 %>% filter(Chr == 7) %>% arrange(Position)
+chr8 <- comb2 %>% filter(Chr == 8) %>% arrange(Position)
+chr9 <- comb2 %>% filter(Chr == 9) %>% arrange(Position)
+chr10 <- comb2 %>% filter(Chr == 10) %>% arrange(Position)
+```
+
+Combine all linkage groups in preferred order. 
+```{r}
+map11 <- rbind(chr1, chr2, chr3, chr4, chr5A, chr5B, chr6, chr7, chr8, chr9, chr10)
+map11[1:5,1:8]
+```
+
+Now, clean up file for R/qtl format.
+Remove Parent1, Parent2, and Cross.
+```{r}
+map11[,4:6] = NULL
+map11[1:5,1:7]
+```
+
+Transpose the dataframe so Marker, Chr, and Position are columns and each individual is a row.
+```{r}
+Tfam11 <- t(map11)
+Fam11_T <- as.data.frame(Tfam11)
+Fam11_T[1:5,1:3]
+```
+
+Add in phenotype(s) as the first columns in the dataframe. Make sure they are in the same order as the individuals.
+Load in phenotype file. 
+NOTE: phenotype file is blank for first 3 rows since it needs to match the transposed dataframe. 
+```{r}
+phen <- read.table("Fam11_phen.txt", header=T)
+head(phen)
+```
+
+Insert phenotype(s) as first columns, and remove column and row headers.
+```{r}
+Fam11_fin <- cbind(phen, Fam11_T)
+colnames(Fam11_fin) = NULL
+rownames(Fam11_fin) = NULL
+Fam11_fin[1:5,1:6]
+```
+
+Write file out in csv format.
+```{r}
+write.csv(Fam11_fin, "Fam11_rqtl.csv")
+```
+(Might need to clean-up in a text editor or Excel. i.e. remove NAs from first 3 phenotype rows, remove blank column headers, remove row header column)  
+
+Ready to upload into Rqtl for mapping!
